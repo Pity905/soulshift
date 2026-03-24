@@ -158,7 +158,7 @@ async function openSoulConfig(item) {
       }
     },
     render: (event, html) => {
-      const root = html instanceof jQuery ? html[0] : (html.element ?? html);
+      const root = html?.element ?? (html instanceof HTMLElement ? html : html?.[0] ?? document);
 
       // Handle add personality button
       root.querySelector("#ss-add-personality")?.addEventListener("click", () => {
