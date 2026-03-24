@@ -1,15 +1,16 @@
 <form>
   <div style="display:flex;flex-direction:column;gap:12px;padding:8px;font-family:Georgia,serif;">
 
-    <p style="margin:0;font-size:0.85em;color:#c8a97e;">
-      Linked personalities will appear in the shift dialog. 
-      The master actor's name prefix is prepended on shift.
-    </p>
+    <div class="form-group">
+      <label>Item Name</label>
+      <input type="text" name="itemName" value="{{itemName}}" placeholder="Soul Anchor">
+      <p class="hint">The item will be renamed to this when saved.</p>
+    </div>
 
     <div class="form-group">
       <label>Master Name Prefix</label>
       <input type="text" name="masterPrefix" value="{{masterPrefix}}" placeholder="M.">
-      <p class="hint">Prepended to the personality name on shift. E.g. "M." → "M. Torvi Yarrow"</p>
+      <p class="hint">Prepended to personality name on shift. E.g. "M." → "M. Torvi Yarrow"</p>
     </div>
 
     <hr>
@@ -59,14 +60,12 @@
 </form>
 
 <script>
-  // Add personality
   document.getElementById("ss-add-personality").addEventListener("click", () => {
     const sel = document.getElementById("ss-actor-select");
     const id = sel.value;
     const name = sel.options[sel.selectedIndex]?.text;
     if (!id) return;
 
-    // Check not already added
     const existing = document.querySelectorAll("input[name='personalityIds']");
     for (const el of existing) {
       if (el.value === id) return;
@@ -82,7 +81,7 @@
     entry.innerHTML = `
       <span style="flex:1;color:#f0e6d3;">${name}</span>
       <input type="hidden" name="personalityIds" value="${id}">
-      <button type="button" class="ss-remove-personality" data-id="${id}" style="
+      <button type="button" class="ss-remove-personality" style="
         background:#3a1a1a;border:1px solid #8b2a2a;color:#f0e6d3;
         border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.8em;
       ">✕ Remove</button>

@@ -2,23 +2,29 @@ Hooks.once("init", () => {
   console.log("SoulShift | Initialised");
 });
 
-const SOUL_ANCHOR_NAME = "Soul Anchor";
 const INVENTORY_TYPES = ["weapon", "equipment", "consumable", "loot", "tool", "container"];
 
 function getInventoryItems(actor) {
   return actor.items.filter(i => INVENTORY_TYPES.includes(i.type));
 }
 
-function getNonInventoryItems(actor) {
+function getNonInventoryItems(actor, anchorItemId) {
   return actor.items.filter(i =>
-    !INVENTORY_TYPES.includes(i.type) && i.name !== SOUL_ANCHOR_NAME
+    !INVENTORY_TYPES.includes(i.type) && i.id !== anchorItemId
   );
 }
 
-function addSoulAnchorConfigButton(app, html) {
+// ─────────────────────────────────────────────
+// Add Soul Config button to ALL item sheets
+// ─────────────────────────────────────────────
+function addSoulConfigButton(app, html) {
   if (!game.user.isGM) return;
+
   const item = app.item ?? app.document;
-  if (!item || item.name !== SOUL_ANCHOR_NAME) return;
+  if (!item) return;
+
+  // Only show on feature type items
+  if (item.type !== "feat") return;
 
   const $html = html instanceof jQuery ? html : $(html.element ?? html);
   if ($html.find(".soulshift-config").length > 0) return;
@@ -36,13 +42,16 @@ function addSoulAnchorConfigButton(app, html) {
   `);
 
   menu.append(menuItem);
-  menuItem.find("button").on("click", () => openSoulAnchorConfig(item));
+  menuItem.find("button").on("click", () => openSoulConfig(item));
 }
 
-Hooks.on("renderItemSheet", addSoulAnchorConfigButton);
-Hooks.on("renderTidy5eItemSheetQuadrone", addSoulAnchorConfigButton);
+Hooks.on("renderItemSheet", addSoulConfigButton);
+Hooks.on("renderTidy5eItemSheetQuadrone", addSoulConfigButton);
 
-async function openSoulAnchorConfig(item) {
+// ─────────────────────────────────────────────
+// Open Soul Config dialog
+// ─────────────────────────────────────────────
+async function openSoulConfig(item) {
   const saved = item.getFlag("soulshift", "config") ?? {
     masterPrefix: "M.",
     personalityIds: []
@@ -61,12 +70,17 @@ async function openSoulAnchorConfig(item) {
 
   const content = await foundry.applications.handlebars.renderTemplate(
     "modules/soulshift/templates/soul-anchor-config.html",
-    { personalities, allActors, masterPrefix: saved.masterPrefix ?? "M." }
+    {
+      itemName: saved.itemName ?? item.name,
+      personalities,
+      allActors,
+      masterPrefix: saved.masterPrefix ?? "M."
+    }
   );
 
   const { DialogV2 } = foundry.applications.api;
   await DialogV2.prompt({
-    window: { title: `⚡ Soul Anchor Config — ${item.actor?.name ?? item.name}` },
+    window: { title: `⚡ Soul Config — ${item.name}` },
     content,
     ok: {
       label: "Save",
@@ -77,17 +91,27 @@ async function openSoulAnchorConfig(item) {
 
         if (!form) return ui.notifications.error("SoulShift | Could not find config form.");
 
+        const itemName = form.itemName?.value?.trim() || "Soul Anchor";
         const masterPrefix = form.masterPrefix?.value ?? "M.";
         const idInputs = [...form.querySelectorAll("input[name='personalityIds']")];
         const personalityIds = idInputs.map(el => el.value).filter(Boolean);
 
-        // Save config flags
-        await item.setFlag("soulshift", "config", { masterPrefix, personalityIds });
+        // Save config
+        await item.setFlag("soulshift", "config", {
+          itemName,
+          masterPrefix,
+          personalityIds
+        });
 
-        // Auto-create Shift Personality activity if it doesn't exist
+        // Rename item
+        await item.update({ name: itemName });
+
+        // Auto-create Shift Personality activity if missing
         const activities = item.system.activities;
         const activityValues = activities
-          ? (typeof activities.values === "function" ? [...activities.values()] : Object.values(activities))
+          ? (typeof activities.values === "function"
+            ? [...activities.values()]
+            : Object.values(activities))
           : [];
         const hasActivity = activityValues.some(a => a.name === "Shift Personality");
 
@@ -100,11 +124,7 @@ async function openSoulAnchorConfig(item) {
               type: "utility",
               name: "Shift Personality",
               img: "icons/magic/symbols/runes-star-purple.webp",
-              activation: {
-                type: "action",
-                value: 1,
-                condition: ""
-              },
+              activation: { type: "action", value: 1, condition: "" },
               duration: { value: "", units: "", special: "" },
               target: {
                 template: { count: "", contiguous: false, type: "", size: "", width: "", height: "", units: "" },
@@ -118,19 +138,22 @@ async function openSoulAnchorConfig(item) {
               roll: { prompt: false, visible: false, name: "", formula: "" }
             };
             await item.update(update);
-            ui.notifications.info(`SoulShift | Config saved and "Shift Personality" activity created.`);
+            ui.notifications.info(`SoulShift | "${itemName}" configured with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"} and Shift Personality activity created.`);
           } catch (err) {
             console.warn("SoulShift | Could not create activity:", err);
             ui.notifications.warn(`SoulShift | Config saved — please add a Utility activity called "Shift Personality" manually.`);
           }
         } else {
-          ui.notifications.info(`SoulShift | Config updated with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"}.`);
+          ui.notifications.info(`SoulShift | "${itemName}" updated with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"}.`);
         }
       }
     }
   });
 }
 
+// ─────────────────────────────────────────────
+// Flash effect
+// ─────────────────────────────────────────────
 async function flashEffect(token) {
   const flash = new PIXI.Graphics();
   flash.beginFill(0xffffff, 0.9);
@@ -157,7 +180,10 @@ async function flashEffect(token) {
   });
 }
 
-async function shiftPersonality(masterActor, personalityActor, masterPrefix) {
+// ─────────────────────────────────────────────
+// Core shift logic
+// ─────────────────────────────────────────────
+async function shiftPersonality(masterActor, personalityActor, anchorItemId, masterPrefix) {
   const token = canvas.tokens.placeables.find(t => t.actor?.id === masterActor.id);
   if (!token) {
     return ui.notifications.error("SoulShift | Master actor token not found on this scene.");
@@ -165,7 +191,6 @@ async function shiftPersonality(masterActor, personalityActor, masterPrefix) {
 
   const currentHP = masterActor.system.attributes.hp.value;
   const currentTempHP = masterActor.system.attributes.hp.temp ?? 0;
-  const inventoryItems = getInventoryItems(masterActor).map(i => i.toObject());
   const currency = foundry.utils.deepClone(masterActor.system.currency);
 
   const newMaxHP = personalityActor.system.attributes.hp.max;
@@ -201,25 +226,31 @@ async function shiftPersonality(masterActor, personalityActor, masterPrefix) {
     "system.currency": currency
   };
 
+  // Flash out
   await flashEffect(token);
 
-  const toDelete = getNonInventoryItems(masterActor).map(i => i.id);
+  // Delete non-inventory items except the anchor item itself
+  const toDelete = getNonInventoryItems(masterActor, anchorItemId).map(i => i.id);
   if (toDelete.length > 0) {
     await masterActor.deleteEmbeddedDocuments("Item", toDelete);
   }
 
+  // Apply stat update
   await masterActor.update(statUpdate);
 
-  const newItems = getNonInventoryItems(personalityActor).map(i => i.toObject());
+  // Copy non-inventory items from personality
+  const newItems = getNonInventoryItems(personalityActor, null).map(i => i.toObject());
   if (newItems.length > 0) {
     await masterActor.createEmbeddedDocuments("Item", newItems);
   }
 
+  // Update token image and name
   await token.document.update({
     "texture.src": personalityActor.prototypeToken?.texture?.src ?? personalityActor.img,
     "name": `${masterPrefix} ${personalityActor.name}`
   });
 
+  // Flash in
   await new Promise(r => setTimeout(r, 150));
   await flashEffect(token);
 
@@ -246,23 +277,29 @@ async function shiftPersonality(masterActor, personalityActor, masterPrefix) {
   ui.notifications.info(`⚡ SoulShift | Now playing as ${personalityActor.name}`);
 }
 
-async function openShiftDialog(masterActor, anchorConfig) {
-  const { personalityIds, masterPrefix } = anchorConfig;
+// ─────────────────────────────────────────────
+// Shift dialog
+// ─────────────────────────────────────────────
+async function openShiftDialog(masterActor, anchorItem) {
+  const config = anchorItem.getFlag("soulshift", "config");
+  if (!config?.personalityIds?.length) {
+    return ui.notifications.error("SoulShift | No personalities configured. Open Soul Config on the item.");
+  }
 
+  const { personalityIds, masterPrefix } = config;
   const personalities = (personalityIds ?? [])
     .map(id => game.actors.get(id))
     .filter(a => a !== undefined);
 
   if (personalities.length === 0) {
-    return ui.notifications.error("SoulShift | No personalities configured. Open Soul Config on the Soul Anchor item.");
+    return ui.notifications.error("SoulShift | Linked personality actors not found. Check Soul Config.");
   }
 
   const options = personalities.map(a => `
     <div class="ss-shift-option" data-actor-id="${a.id}" style="
       display:flex;align-items:center;gap:12px;padding:8px;
       border:1px solid #7a4aaa;border-radius:6px;cursor:pointer;
-      margin-bottom:8px;background:#1a1a2e;color:#f0e6d3;
-      font-family:Georgia,serif;
+      margin-bottom:8px;background:#1a1a2e;color:#f0e6d3;font-family:Georgia,serif;
     ">
       <img src="${a.img}" width="44" height="44" style="border-radius:50%;border:2px solid #7a4aaa;object-fit:cover"/>
       <div>
@@ -293,41 +330,47 @@ async function openShiftDialog(masterActor, anchorConfig) {
           const personality = game.actors.get(el.dataset.actorId);
           if (!personality) return;
           html.closest(".application")?.querySelector("[data-action='ok']")?.click();
-          await shiftPersonality(masterActor, personality, masterPrefix ?? "M.");
+          await shiftPersonality(masterActor, personality, anchorItem.id, masterPrefix ?? "M.");
         });
       });
     }
   });
 }
 
+// ─────────────────────────────────────────────
+// Hook — fire on Shift Personality activity use
+// ─────────────────────────────────────────────
 Hooks.on("dnd5e.postCreateUsageMessage", async (activity) => {
   if (activity?.name !== "Shift Personality") return;
+
   const item = activity.item;
-  if (!item || item.name !== SOUL_ANCHOR_NAME) return;
+  if (!item) return;
+
+  // Only fire if this item has soulshift config
+  const config = item.getFlag("soulshift", "config");
+  if (!config) return;
+
   const actor = item.actor;
   if (!actor) return;
 
-  const config = item.getFlag("soulshift", "config");
-  if (!config?.personalityIds?.length) {
-    return ui.notifications.error("SoulShift | Open Soul Config on the Soul Anchor item to add personalities first.");
-  }
-
-  await openShiftDialog(actor, config);
+  await openShiftDialog(actor, item);
 });
 
+// ─────────────────────────────────────────────
+// Hook — DM right-click token option
+// ─────────────────────────────────────────────
 Hooks.on("getTokenContextOptions", (html, options) => {
   options.push({
     name: "⚡ Shift Personality",
     icon: '<i class="fas fa-masks-theater"></i>',
     condition: token => {
       if (!game.user.isGM) return false;
-      return token.actor?.items.some(i => i.name === SOUL_ANCHOR_NAME);
+      return token.actor?.items.some(i => i.getFlag("soulshift", "config"));
     },
     callback: token => {
-      const anchor = token.actor.items.find(i => i.name === SOUL_ANCHOR_NAME);
-      const config = anchor?.getFlag("soulshift", "config");
-      if (!config) return ui.notifications.error("SoulShift | No Soul Anchor config found.");
-      openShiftDialog(token.actor, config);
+      const anchor = token.actor.items.find(i => i.getFlag("soulshift", "config"));
+      if (!anchor) return ui.notifications.error("SoulShift | No configured item found.");
+      openShiftDialog(token.actor, anchor);
     }
   });
 });
