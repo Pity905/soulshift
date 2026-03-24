@@ -68,60 +68,131 @@ function attachRemoveListeners(root) {
 // ─────────────────────────────────────────────
 // Open Soul Config dialog
 // ─────────────────────────────────────────────
-async function openShiftDialog(masterActor, anchorItem) {
-  const config = anchorItem.getFlag("soulshift", "config");
-  if (!config?.personalityIds?.length) {
-    return ui.notifications.error("SoulShift | No personalities configured. Open Soul Config on the item.");
-  }
+async function openSoulConfig(item) {
+  const saved = item.getFlag("soulshift", "config") ?? {
+    masterPrefix: "M.",
+    personalityIds: []
+  };
 
-  const { personalityIds, masterPrefix } = config;
-  const personalities = (personalityIds ?? [])
+  const personalities = (saved.personalityIds ?? [])
     .map(id => game.actors.get(id))
-    .filter(a => a !== undefined);
+    .filter(a => a !== undefined)
+    .map(a => ({ id: a.id, name: a.name, img: a.img }));
 
-  if (personalities.length === 0) {
-    return ui.notifications.error("SoulShift | Linked personality actors not found. Check Soul Config.");
-  }
+  const masterActor = item.actor;
+  const allActors = game.actors
+    .filter(a => a.id !== masterActor?.id && a.type === "character")
+    .map(a => ({ id: a.id, name: a.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const options = personalities.map(a => `
-    <div class="ss-shift-option" data-actor-id="${a.id}" style="
-      display:flex;align-items:center;gap:12px;padding:8px;
-      border:1px solid #7a4aaa;border-radius:6px;cursor:pointer;
-      margin-bottom:8px;background:#1a1a2e;color:#f0e6d3;font-family:Georgia,serif;
-    ">
-      <img src="${a.img}" width="44" height="44" style="border-radius:50%;border:2px solid #7a4aaa;object-fit:cover"/>
-      <div>
-        <div style="font-weight:bold;">${a.name}</div>
-        <div style="font-size:0.8em;color:#c8a97e;">HP max: ${a.system.attributes.hp.max}</div>
-      </div>
-    </div>
-  `).join("");
-
-  const content = `
-    <div style="padding:8px;">
-      <p style="font-family:Georgia,serif;color:#c8a97e;margin-bottom:12px;font-size:0.9em;font-style:italic;">
-        Which personality surfaces?
-      </p>
-      ${options}
-    </div>
-    <style>.ss-shift-option:hover { background:#2a1a3e !important; border-color:#aa6aee !important; }</style>
-  `;
+  const content = await foundry.applications.handlebars.renderTemplate(
+    "modules/soulshift/templates/soul-anchor-config.html",
+    {
+      itemName: saved.itemName ?? item.name,
+      personalities,
+      allActors,
+      masterPrefix: saved.masterPrefix ?? "M."
+    }
+  );
 
   const { DialogV2 } = foundry.applications.api;
   await DialogV2.prompt({
-    window: { title: "⚡ Personality Shift" },
+    window: { title: `⚡ Soul Config — ${item.name}` },
     content,
-    ok: { label: "Cancel", callback: () => {} },
+    ok: {
+      label: "Save",
+      callback: async (event, button) => {
+        const form = button.form
+          ?? button.closest("form")
+          ?? button.closest(".window-content")?.querySelector("form");
+
+        if (!form) return ui.notifications.error("SoulShift | Could not find config form.");
+
+        const itemName = form.itemName?.value?.trim() || "Soul Anchor";
+        const masterPrefix = form.masterPrefix?.value ?? "M.";
+        const idInputs = [...form.querySelectorAll("input[name='personalityIds']")];
+        const personalityIds = idInputs.map(el => el.value).filter(Boolean);
+
+        await item.setFlag("soulshift", "config", { itemName, masterPrefix, personalityIds });
+        await item.update({ name: itemName });
+
+        const activities = item.system.activities;
+        const activityValues = activities
+          ? (typeof activities.values === "function"
+            ? [...activities.values()]
+            : Object.values(activities))
+          : [];
+        const hasActivity = activityValues.some(a => a.name === "Shift Personality");
+
+        if (!hasActivity) {
+          try {
+            const newId = foundry.utils.randomID();
+            const update = {};
+            update[`system.activities.${newId}`] = {
+              _id: newId,
+              type: "utility",
+              name: "Shift Personality",
+              img: "icons/svg/aura.svg",
+              activation: { type: "action", value: 1, condition: "" },
+              duration: { value: "", units: "", special: "" },
+              target: {
+                template: { count: "", contiguous: false, type: "", size: "", width: "", height: "", units: "" },
+                affects: { count: "", type: "", choice: false, special: "" },
+                prompt: false
+              },
+              range: { value: null, units: "", special: "" },
+              uses: { spent: 0, max: "", recovery: [] },
+              consumption: { targets: [], scaling: { allowed: false, max: "" } },
+              effects: [],
+              roll: { prompt: false, visible: false, name: "", formula: "" }
+            };
+            await item.update(update);
+            ui.notifications.info(`SoulShift | "${itemName}" configured with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"} and Shift Personality activity created.`);
+          } catch (err) {
+            console.warn("SoulShift | Could not create activity:", err);
+            ui.notifications.warn(`SoulShift | Config saved — please add a Utility activity called "Shift Personality" manually.`);
+          }
+        } else {
+          ui.notifications.info(`SoulShift | "${itemName}" updated with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"}.`);
+        }
+      }
+    },
     render: (event, dialog) => {
-      const root = dialog.element ?? dialog;
-      root.querySelectorAll(".ss-shift-option").forEach(el => {
-        el.addEventListener("click", async () => {
-          const personality = game.actors.get(el.dataset.actorId);
-          if (!personality) return;
-          root.closest(".application")?.querySelector("[data-action='ok']")?.click();
-          await shiftPersonality(masterActor, personality, anchorItem.id, masterPrefix ?? "M.");
-        });
+      const root = dialog.element ?? event.target?.closest(".application");
+      if (!root) return;
+
+      root.querySelector("#ss-add-personality")?.addEventListener("click", () => {
+        const sel = root.querySelector("#ss-actor-select");
+        const id = sel?.value;
+        const name = sel?.options[sel.selectedIndex]?.text;
+        if (!id) return;
+
+        const existing = root.querySelectorAll("input[name='personalityIds']");
+        for (const el of existing) {
+          if (el.value === id) return;
+        }
+
+        const list = root.querySelector("#ss-personality-list");
+        const noP = root.querySelector("#ss-no-personalities");
+        if (noP) noP.remove();
+
+        const entry = document.createElement("div");
+        entry.className = "ss-personality-entry";
+        entry.style.cssText = "display:flex;align-items:center;gap:10px;padding:6px 8px;background:#1a1a2e;border:1px solid #7a4aaa;border-radius:6px;";
+        entry.innerHTML = `
+          <span style="flex:1;color:#f0e6d3;">${name}</span>
+          <input type="hidden" name="personalityIds" value="${id}">
+          <button type="button" class="ss-remove-personality" style="
+            background:#3a1a1a;border:1px solid #8b2a2a;color:#f0e6d3;
+            border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.8em;
+          ">✕ Remove</button>
+        `;
+        list.appendChild(entry);
+        sel.value = "";
+        attachRemoveListeners(root);
       });
+
+      attachRemoveListeners(root);
     }
   });
 }
@@ -252,9 +323,6 @@ async function shiftPersonality(masterActor, personalityActor, anchorItemId, mas
   ui.notifications.info(`⚡ SoulShift | Now playing as ${personalityActor.name}`);
 }
 
-// ─────────────────────────────────────────────
-// Shift dialog
-// ─────────────────────────────────────────────
 async function openShiftDialog(masterActor, anchorItem) {
   const config = anchorItem.getFlag("soulshift", "config");
   if (!config?.personalityIds?.length) {
@@ -299,12 +367,13 @@ async function openShiftDialog(masterActor, anchorItem) {
     window: { title: "⚡ Personality Shift" },
     content,
     ok: { label: "Cancel", callback: () => {} },
-    render: (event, html) => {
-      html.querySelectorAll(".ss-shift-option").forEach(el => {
+    render: (event, dialog) => {
+      const root = dialog.element ?? dialog;
+      root.querySelectorAll(".ss-shift-option").forEach(el => {
         el.addEventListener("click", async () => {
           const personality = game.actors.get(el.dataset.actorId);
           if (!personality) return;
-          html.closest(".application")?.querySelector("[data-action='ok']")?.click();
+          root.closest(".application")?.querySelector("[data-action='ok']")?.click();
           await shiftPersonality(masterActor, personality, anchorItem.id, masterPrefix ?? "M.");
         });
       });

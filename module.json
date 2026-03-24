@@ -2,7 +2,7 @@
   "id": "soulshift",
   "title": "SoulShift",
   "description": "Split personality mechanic — shift a master actor between personality templates.",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "manifest": "https://raw.githubusercontent.com/Pity905/soulshift/master/module.json",
   "download": "https://github.com/Pity905/soulshift/archive/refs/heads/master.zip",
   "url": "https://github.com/Pity905/soulshift",
