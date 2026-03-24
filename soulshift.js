@@ -157,17 +157,16 @@ async function openSoulConfig(item) {
         }
       }
     },
-    render: (event, html) => {
-      const root = html?.element ?? (html instanceof HTMLElement ? html : html?.[0] ?? document);
+    render: (event, dialog) => {
+      const root = dialog.element ?? event.target?.closest(".application");
+      if (!root) return;
 
-      // Handle add personality button
       root.querySelector("#ss-add-personality")?.addEventListener("click", () => {
         const sel = root.querySelector("#ss-actor-select");
         const id = sel?.value;
         const name = sel?.options[sel.selectedIndex]?.text;
         if (!id) return;
 
-        // Check not already added
         const existing = root.querySelectorAll("input[name='personalityIds']");
         for (const el of existing) {
           if (el.value === id) return;
