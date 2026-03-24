@@ -1,0 +1,17 @@
+{
+  "id": "soulshift",
+  "title": "SoulShift",
+  "description": "Split personality mechanic — shift a master actor between personality templates.",
+  "version": "1.0.0",
+  "manifest": "https://raw.githubusercontent.com/Pity905/soulshift/main/module.json",
+  "download": "https://github.com/Pity905/soulshift/archive/refs/heads/main.zip",
+  "url": "https://github.com/Pity905/soulshift",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "13"
+  },
+  "esmodules": ["soulshift.js"],
+  "languages": [],
+  "authors": [{"name": "You"}],
+  "systems": ["dnd5e"]
+}
