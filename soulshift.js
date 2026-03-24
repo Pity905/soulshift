@@ -48,6 +48,23 @@ function addSoulConfigButton(app, html) {
 Hooks.on("renderItemSheet", addSoulConfigButton);
 Hooks.on("renderTidy5eItemSheetQuadrone", addSoulConfigButton);
 
+
+function attachRemoveListeners(html) {
+  html.querySelectorAll(".ss-remove-personality").forEach(btn => {
+    btn.onclick = () => {
+      btn.closest(".ss-personality-entry").remove();
+      if (!html.querySelectorAll(".ss-personality-entry").length) {
+        const list = html.querySelector("#ss-personality-list");
+        const p = document.createElement("p");
+        p.id = "ss-no-personalities";
+        p.style.cssText = "color:#888;font-size:0.85em;font-style:italic;";
+        p.textContent = "No personalities linked yet.";
+        list.appendChild(p);
+      }
+    };
+  });
+}
+
 // ─────────────────────────────────────────────
 // Open Soul Config dialog
 // ─────────────────────────────────────────────
@@ -96,17 +113,9 @@ async function openSoulConfig(item) {
         const idInputs = [...form.querySelectorAll("input[name='personalityIds']")];
         const personalityIds = idInputs.map(el => el.value).filter(Boolean);
 
-        // Save config
-        await item.setFlag("soulshift", "config", {
-          itemName,
-          masterPrefix,
-          personalityIds
-        });
-
-        // Rename item
+        await item.setFlag("soulshift", "config", { itemName, masterPrefix, personalityIds });
         await item.update({ name: itemName });
 
-        // Auto-create Shift Personality activity if missing
         const activities = item.system.activities;
         const activityValues = activities
           ? (typeof activities.values === "function"
@@ -123,7 +132,7 @@ async function openSoulConfig(item) {
               _id: newId,
               type: "utility",
               name: "Shift Personality",
-              img: "icons/magic/symbols/runes-star-purple.webp",
+              img: "icons/svg/aura.svg",
               activation: { type: "action", value: 1, condition: "" },
               duration: { value: "", units: "", special: "" },
               target: {
@@ -147,6 +156,42 @@ async function openSoulConfig(item) {
           ui.notifications.info(`SoulShift | "${itemName}" updated with ${personalityIds.length} personalit${personalityIds.length !== 1 ? "ies" : "y"}.`);
         }
       }
+    },
+    render: (event, html) => {
+      // Handle add personality button
+      html.querySelector("#ss-add-personality")?.addEventListener("click", () => {
+        const sel = html.querySelector("#ss-actor-select");
+        const id = sel?.value;
+        const name = sel?.options[sel.selectedIndex]?.text;
+        if (!id) return;
+
+        // Check not already added
+        const existing = html.querySelectorAll("input[name='personalityIds']");
+        for (const el of existing) {
+          if (el.value === id) return;
+        }
+
+        const list = html.querySelector("#ss-personality-list");
+        const noP = html.querySelector("#ss-no-personalities");
+        if (noP) noP.remove();
+
+        const entry = document.createElement("div");
+        entry.className = "ss-personality-entry";
+        entry.style.cssText = "display:flex;align-items:center;gap:10px;padding:6px 8px;background:#1a1a2e;border:1px solid #7a4aaa;border-radius:6px;";
+        entry.innerHTML = `
+          <span style="flex:1;color:#f0e6d3;">${name}</span>
+          <input type="hidden" name="personalityIds" value="${id}">
+          <button type="button" class="ss-remove-personality" style="
+            background:#3a1a1a;border:1px solid #8b2a2a;color:#f0e6d3;
+            border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.8em;
+          ">✕ Remove</button>
+        `;
+        list.appendChild(entry);
+        sel.value = "";
+        attachRemoveListeners(html);
+      });
+
+      attachRemoveListeners(html);
     }
   });
 }
