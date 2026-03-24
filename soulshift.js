@@ -49,12 +49,12 @@ Hooks.on("renderItemSheet", addSoulConfigButton);
 Hooks.on("renderTidy5eItemSheetQuadrone", addSoulConfigButton);
 
 
-function attachRemoveListeners(html) {
-  html.querySelectorAll(".ss-remove-personality").forEach(btn => {
+function attachRemoveListeners(root) {
+  root.querySelectorAll(".ss-remove-personality").forEach(btn => {
     btn.onclick = () => {
       btn.closest(".ss-personality-entry").remove();
-      if (!html.querySelectorAll(".ss-personality-entry").length) {
-        const list = html.querySelector("#ss-personality-list");
+      if (!root.querySelectorAll(".ss-personality-entry").length) {
+        const list = root.querySelector("#ss-personality-list");
         const p = document.createElement("p");
         p.id = "ss-no-personalities";
         p.style.cssText = "color:#888;font-size:0.85em;font-style:italic;";
@@ -158,21 +158,23 @@ async function openSoulConfig(item) {
       }
     },
     render: (event, html) => {
+      const root = html instanceof jQuery ? html[0] : (html.element ?? html);
+
       // Handle add personality button
-      html.querySelector("#ss-add-personality")?.addEventListener("click", () => {
-        const sel = html.querySelector("#ss-actor-select");
+      root.querySelector("#ss-add-personality")?.addEventListener("click", () => {
+        const sel = root.querySelector("#ss-actor-select");
         const id = sel?.value;
         const name = sel?.options[sel.selectedIndex]?.text;
         if (!id) return;
 
         // Check not already added
-        const existing = html.querySelectorAll("input[name='personalityIds']");
+        const existing = root.querySelectorAll("input[name='personalityIds']");
         for (const el of existing) {
           if (el.value === id) return;
         }
 
-        const list = html.querySelector("#ss-personality-list");
-        const noP = html.querySelector("#ss-no-personalities");
+        const list = root.querySelector("#ss-personality-list");
+        const noP = root.querySelector("#ss-no-personalities");
         if (noP) noP.remove();
 
         const entry = document.createElement("div");
@@ -188,10 +190,10 @@ async function openSoulConfig(item) {
         `;
         list.appendChild(entry);
         sel.value = "";
-        attachRemoveListeners(html);
+        attachRemoveListeners(root);
       });
 
-      attachRemoveListeners(html);
+      attachRemoveListeners(root);
     }
   });
 }
