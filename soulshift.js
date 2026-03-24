@@ -14,6 +14,17 @@ function getNonInventoryItems(actor, anchorItemId) {
   );
 }
 
+function getVisionRange(actor) {
+  const senses = actor?.system?.attributes?.senses ?? {};
+  const darkvision = Number(senses.darkvision) || 0;
+  const truesight = Number(senses.truesight) || 0;
+  const blindsight = Number(senses.blindsight) || 0;
+  const tremorsense = Number(senses.tremorsense) || 0;
+  const protRange = Number(actor?.prototypeToken?.sight?.range) || 0;
+
+  return Math.max(darkvision, truesight, blindsight, tremorsense, protRange, 0);
+}
+
 // ─────────────────────────────────────────────
 // Add Soul Config button to ALL item sheets
 // ─────────────────────────────────────────────
@@ -290,10 +301,19 @@ async function shiftPersonality(masterActor, personalityActor, anchorItemId, mas
     await masterActor.createEmbeddedDocuments("Item", newItems);
   }
 
-  // Update token image and name
+  // Update token image, name, and vision to match the active personality
+  const visionRange = getVisionRange(personalityActor);
+  const personalitySight = foundry.utils.deepClone(personalityActor.prototypeToken?.sight ?? {});
+  personalitySight.enabled = true;
+  personalitySight.range = visionRange;
+
+  const personalityDetectionModes = foundry.utils.deepClone(personalityActor.prototypeToken?.detectionModes ?? []);
+
   await token.document.update({
     "texture.src": personalityActor.prototypeToken?.texture?.src ?? personalityActor.img,
-    "name": `${masterPrefix} ${personalityActor.name}`
+    "name": `${masterPrefix} ${personalityActor.name}`,
+    "sight": personalitySight,
+    "detectionModes": personalityDetectionModes
   });
 
   // Flash in
